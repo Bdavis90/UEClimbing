@@ -39,8 +39,14 @@ class AClimbingCharacter : public ACharacter
 
 	/** Arrow to use for placing line trace*/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	class UArrowComponent* Arrow;
+	class UArrowComponent* LedgeFinder;
 
+	// bool to detect if line trace hit a ledge
+	bool bDetectLedge;
+
+	FVector CheckLedgeImpact;
+
+	float LedgeHeightLocation;
 public:
 	AClimbingCharacter();
 	
@@ -53,7 +59,8 @@ protected:
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
 
-	bool TraceForLedge();
+	bool TraceForLedge(FHitResult &Hit);
+	bool VerticalTrace(FHitResult &Hit);
 			
 
 protected:

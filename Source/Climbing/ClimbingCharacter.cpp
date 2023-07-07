@@ -12,11 +12,13 @@
 #include "Components/ArrowComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 
+#include "Kismet/KismetSystemLibrary.h"
+
 
 //////////////////////////////////////////////////////////////////////////
 // AClimbingCharacter
 
-AClimbingCharacter::AClimbingCharacter()
+AClimbingCharacter::AClimbingCharacter() : bDetectLedge(false)
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
@@ -53,8 +55,8 @@ AClimbingCharacter::AClimbingCharacter()
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
 
 	// Arrow for line trace
-	Arrow = CreateDefaultSubobject<UArrowComponent>(TEXT("Arrow1"));
-	Arrow->SetupAttachment(GetMesh());
+	LedgeFinder = CreateDefaultSubobject<UArrowComponent>(TEXT("LedgeFinder"));
+	LedgeFinder->SetupAttachment(GetMesh());
 }
 
 void AClimbingCharacter::BeginPlay()
@@ -75,11 +77,26 @@ void AClimbingCharacter::BeginPlay()
 void AClimbingCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	FHitResult CapsuleHit;
+	FHitResult LineHit;
 
-	if(TraceForLedge())
+	if(TraceForLedge(CapsuleHit))
 	{
-		
+		GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Blue, FString::Printf(TEXT("Capsule hit %s!"), *CapsuleHit.GetActor()->GetActorNameOrLabel()));
+
+		if (VerticalTrace(LineHit))
+		{
+			bDetectLedge = true;
+			LedgeHeightLocation = CheckLedgeImpact.Z;
+			GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Blue, FString::Printf(TEXT("Line hit %s!"), *LineHit.GetActor()->GetActorNameOrLabel()));
+		}
+		else
+		{
+			bDetectLedge = false;
+		}
 	}
+
+	GEngine->AddOnScreenDebugMessage(-1, .001f, FColor::Cyan, FString::Printf(TEXT("LedgeHeightLocation: %f"), LedgeHeightLocation));
 	
 }
 
@@ -141,22 +158,37 @@ void AClimbingCharacter::Look(const FInputActionValue& Value)
 	}
 }
 
-bool AClimbingCharacter::TraceForLedge()
+bool AClimbingCharacter::TraceForLedge(FHitResult &Hit)
 {
-	FHitResult Hit;
+	// Get the actors location and move it 50.f up
 	FVector TraceStart = GetActorLocation() + FVector(0.f, 0.f, 50.f);
-	FVector TraceEnd = GetActorForwardVector() * 33.f + FVector(0.f, 0.f, 60.f);
+	// Scale the actors forward vector and add the actor's location and move it 50.f up
+	FVector TraceEnd = GetActorForwardVector() * 33.f + GetActorLocation() + FVector(0.f, 0.f, 50.f);
+	// Make a capsule to trace with
 	FCollisionShape Capsule = FCollisionShape::MakeCapsule(22.f, 100.f);
-	bool ValidHit = GetWorld()->SweepSingleByObjectType(Hit, TraceStart, TraceEnd, FQuat::Identity, FCollisionObjectQueryParams::DefaultObjectQueryParam, Capsule);
-	DrawDebugCapsule(GetWorld(), GetActorLocation(), Capsule.GetCapsuleHalfHeight(), Capsule.GetCapsuleRadius(), FQuat::Identity, FColor::Red);
-	FVector ImpactPoint = Hit.ImpactPoint;
-	FVector ImpactNormal = Hit.ImpactNormal;
-	FRotator ImpactRot = UKismetMathLibrary::MakeRotator(ImpactNormal.X, ImpactNormal.Y, ImpactNormal.Z);
-	FVector x = FRotationMatrix(ImpactRot).GetUnitAxis(EAxis::X);
+	// Capsule trace
+	TArray<AActor*> ActorsToIgnore = TArray<AActor*>();
+	bool ValidHit = UKismetSystemLibrary::CapsuleTraceSingleByProfile(this, TraceStart, TraceEnd, Capsule.GetCapsuleRadius(), Capsule.GetCapsuleHalfHeight(), FName(TEXT("Ledge")), false, ActorsToIgnore, EDrawDebugTrace::ForOneFrame, Hit, true, FLinearColor::Yellow, FLinearColor::Yellow);
+	//bool ValidHit = UKismetSystemLibrary::CapsuleTraceSingle(this, TraceStart, TraceEnd, Capsule.GetCapsuleRadius(), Capsule.GetCapsuleHalfHeight(), TraceTypeQuery1, false, ActorsToIgnore, EDrawDebugTrace::ForOneFrame, Hit, true, FLinearColor::Yellow, FLinearColor::Yellow);
+	FVector CapsuleImpactPoint = Hit.ImpactPoint;
+	FVector CapsuleImpactNormal = Hit.ImpactNormal;
+	float ImpactRot = UKismetMathLibrary::MakeRotFromX(CapsuleImpactNormal).Yaw;
 
 	return ValidHit;
 }
 
+bool AClimbingCharacter::VerticalTrace(FHitResult& Hit)
+{
+	// Get the arrow component location and move it up 80.f
+	FVector TraceStart = LedgeFinder->GetComponentLocation() + FVector(0.f, 0.f, 80.f);
+	// Getthe arrow component location
+	FVector TraceEnd = LedgeFinder->GetComponentLocation();
+	// Line trace for ledge collision
+	bool ValidHit = UKismetSystemLibrary::LineTraceSingleByProfile(this, TraceStart, TraceEnd, FName(TEXT("Ledge")), false, TArray<AActor*>(), EDrawDebugTrace::ForOneFrame, Hit, true, FLinearColor::White, FLinearColor::White);
+
+	CheckLedgeImpact = Hit.ImpactPoint;
+	return ValidHit;
+}
 
 
 
